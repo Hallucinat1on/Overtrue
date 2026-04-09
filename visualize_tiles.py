@@ -3,11 +3,11 @@
 Visualize a tile JSON file created by split_building_blocks.py and save an overhead view.
 
 example:
-python visualize_tile.py \
+python visualize_tiles.py \
   --input processed/newyork_manhattan/tile_x43_y63.json \
   --output processed/newyork_manhattan/tile_x43_y63.png
 
-python visualize_tile.py \
+python visualize_tiles.py \
   --input_dir processed/newyork_manhattan \
   --output_dir processed/newyork_manhattan
 """

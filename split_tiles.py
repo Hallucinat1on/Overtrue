@@ -8,7 +8,7 @@ Each tile JSON includes:
 - Rotation angle, bbox length/width/height, name, and type
 
 Example:
-python split_building_blocks.py \
+python split_tiles.py \
     --input raw/newyork_manhattan/all_features.geojson \
     --out_dir processed/newyork_manhattan \
     --tile_size 400 \
@@ -209,22 +209,32 @@ def _intersection_area(a: Tuple[float, float, float, float], b: Tuple[float, flo
 def _filter_overlapping_buildings(buildings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     n = len(buildings)
     if n < 2:
-        return buildings
+        return [{k: v for k, v in b.items() if not str(k).startswith("__")} for b in buildings]
 
     keep = [True] * n
-    boxes = [None] * n
+    geoms = [None] * n
     areas = [0.0] * n
     for i, b in enumerate(buildings):
-        boxes[i] = _aabb_from_building(b)
-        areas[i] = float(b["bbox"]["length"]) * float(b["bbox"]["width"])
+        geom = b.get("__overlap_poly")
+        if geom is None or geom.is_empty:
+            # Fallback to axis-aligned rectangle if no rotated geometry is available.
+            geom = box(*_aabb_from_building(b))
+        geoms[i] = geom
+        areas[i] = float(geom.area)
 
     for i in range(n):
         if not keep[i]:
             continue
+        if areas[i] <= 0.0:
+            keep[i] = False
+            continue
         for j in range(i + 1, n):
             if not keep[j]:
                 continue
-            overlap = _intersection_area(boxes[i], boxes[j])
+            if areas[j] <= 0.0:
+                keep[j] = False
+                continue
+            overlap = geoms[i].intersection(geoms[j]).area
             if overlap <= 0.0:
                 continue
             if overlap > 0.2 * areas[i] or overlap > 0.2 * areas[j]:
@@ -233,7 +243,7 @@ def _filter_overlapping_buildings(buildings: List[Dict[str, Any]]) -> List[Dict[
                     break
                 keep[j] = False
 
-    return [b for idx, b in enumerate(buildings) if keep[idx]]
+    return [{k: v for k, v in b.items() if not str(k).startswith("__")} for idx, b in enumerate(buildings) if keep[idx]]
 
 
 def split_to_tiles(
@@ -310,6 +320,7 @@ def split_to_tiles(
             oriented_bbox = _oriented_bbox_info(geom)
             name_type = _extract_name_and_type(row_dict)
             height_value = name_type["type"].get("height")
+            overlap_poly = geom.minimum_rotated_rectangle
 
             if oriented_bbox is not None:
                 length = int(round(max(oriented_bbox["width"], oriented_bbox["height"])))
@@ -342,6 +353,7 @@ def split_to_tiles(
                     "position": position,
                     "name": name_type.get("name"),
                     "type": name_type.get("type"),
+                    "__overlap_poly": overlap_poly,
                 }
             )
 
