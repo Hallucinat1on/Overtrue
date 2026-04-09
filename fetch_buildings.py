@@ -17,7 +17,8 @@ python fetch_buildings.py \
   --bbox "40.70,-74.02;40.88,-73.92" \
   --out_dir raw/newyork_manhattan \
   --target_crs EPSG:32618 \
-  --include_parts
+  --include_parts \
+  --include_roads
 """
 
 import argparse
@@ -255,14 +256,23 @@ def _sanitize_value(value):
 
 
 def _ensure_required_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    gdf["object_category"] = "building"
-
-    # Keep compatibility with existing pipeline.
-    if "building:levels" not in gdf.columns:
-        gdf["building:levels"] = gdf.apply(_coerce_levels, axis=1)
+    if "object_category" not in gdf.columns:
+        gdf["object_category"] = "building"
     else:
-        fill_mask = gdf["building:levels"].isna()
-        gdf.loc[fill_mask, "building:levels"] = gdf.loc[fill_mask].apply(_coerce_levels, axis=1)
+        missing_mask = gdf["object_category"].isna()
+        if missing_mask.any():
+            gdf.loc[missing_mask, "object_category"] = "building"
+
+    # Only building features should get building levels.
+    if "building:levels" not in gdf.columns:
+        gdf["building:levels"] = pd.NA
+    building_mask = gdf["object_category"] == "building"
+    if building_mask.any():
+        levels_missing = gdf.loc[building_mask, "building:levels"].isna()
+        if levels_missing.any():
+            gdf.loc[building_mask & levels_missing, "building:levels"] = gdf.loc[building_mask & levels_missing].apply(
+                _coerce_levels, axis=1
+            )
 
     if "levels_f" not in gdf.columns:
         gdf["levels_f"] = gdf["building:levels"]
@@ -275,7 +285,7 @@ def _ensure_required_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         if "type" in gdf.columns:
             gdf["source_type"] = gdf["type"]
         else:
-            gdf["source_type"] = "building"
+            gdf["source_type"] = gdf["object_category"]
 
     return gdf
 
@@ -296,6 +306,7 @@ def fetch(
     bbox: str,
     target_crs: Optional[str],
     include_parts: bool,
+    include_roads: bool,
     release: Optional[str],
     use_stac: bool,
 ) -> None:
@@ -309,6 +320,7 @@ def fetch(
         print("Downloading Overture type=building ...")
         _run_overture_download(building_geojson, bbox_wsen, "building", release, use_stac)
         building_gdf = _read_geojson_if_exists(building_geojson)
+        building_gdf["object_category"] = "building"
 
         frames = [building_gdf]
 
@@ -319,10 +331,24 @@ def fetch(
                 _run_overture_download(part_geojson, bbox_wsen, "building_part", release, use_stac)
                 part_gdf = _read_geojson_if_exists(part_geojson)
                 if not part_gdf.empty:
+                    part_gdf["object_category"] = "building"
                     frames.append(part_gdf)
             except RuntimeError as e:
                 # Keep building-only export when building_part is unavailable.
                 print(f"Skip building_part due to error: {e}")
+
+        if include_roads:
+            for feature_type in ("segment", "connector"):
+                road_geojson = tmp_dir_path / f"road_{feature_type}.geojson"
+                print(f"Downloading Overture type={feature_type} ...")
+                try:
+                    _run_overture_download(road_geojson, bbox_wsen, feature_type, release, use_stac)
+                    road_gdf = _read_geojson_if_exists(road_geojson)
+                    if not road_gdf.empty:
+                        road_gdf["object_category"] = "road"
+                        frames.append(road_gdf)
+                except RuntimeError as e:
+                    print(f"Skip {feature_type} due to error: {e}")
 
         all_features = gpd.GeoDataFrame(
             pd.concat(frames, ignore_index=True),
@@ -387,6 +413,11 @@ def main() -> None:
         help="Also download building_part for denser building geometry coverage",
     )
     parser.add_argument(
+        "--include_roads",
+        action="store_true",
+        help="Also download road features and include them in all_features.geojson",
+    )
+    parser.add_argument(
         "--release",
         type=str,
         default=None,
@@ -404,6 +435,7 @@ def main() -> None:
         bbox=args.bbox,
         target_crs=args.target_crs,
         include_parts=args.include_parts,
+        include_roads=args.include_roads,
         release=args.release,
         use_stac=(not args.no_stac),
     )

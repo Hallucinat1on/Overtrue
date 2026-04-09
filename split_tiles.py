@@ -25,6 +25,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import geopandas as gpd
 from shapely.geometry import box
+from shapely.ops import linemerge
 
 try:
     tqdm = importlib.import_module("tqdm").tqdm
@@ -278,6 +279,72 @@ def _infer_type_from_local_features(row) -> Tuple[str, str, str]:
     return "residential", "low", "fallback-residential"
 
 
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return False
+
+
+def _is_surface_road(row) -> bool:
+    category = str(row.get("object_category") or row.get("source_type") or "").lower()
+    if category not in {"road", "highway", "segment", "connector", "infrastructure"}:
+        return False
+
+    # 排除地下、高架、桥梁和轨道交通专用道路
+    if _truthy(row.get("tunnel")):
+        return False
+    if _truthy(row.get("bridge")):
+        return False
+    layer = row.get("layer")
+    if layer is not None:
+        try:
+            if int(float(layer)) != 0:
+                return False
+        except Exception:
+            pass
+    if row.get("railway") is not None:
+        return False
+    highway = str(row.get("highway") or "").lower()
+    if highway in {"tram", "light_rail", "rail", "subway", "monorail", "platform", "raceway"}:
+        return False
+
+    return True
+
+
+def _road_sample_points(geom, spacing: float = 20.0) -> List[Any]:
+    if geom is None or geom.is_empty:
+        return []
+
+    line = geom
+    if geom.geom_type == "Polygon":
+        line = geom.exterior
+    elif geom.geom_type == "MultiPolygon":
+        line = linemerge([poly.exterior for poly in geom.geoms])
+    elif geom.geom_type == "MultiLineString":
+        line = linemerge(geom)
+
+    if line is None or line.is_empty:
+        return []
+
+    length = line.length
+    if length <= 0.0:
+        return []
+
+    count = max(1, int(math.ceil(length / spacing)))
+    step = length / count
+    points = []
+    for i in range(count):
+        dist = min((i + 0.5) * step, length)
+        points.append(line.interpolate(dist))
+    return points
+
+
 def _iter_with_progress(iterable, total: Optional[int] = None, desc: Optional[str] = None):
     if tqdm is not None:
         return tqdm(iterable, total=total, desc=desc, unit="tile", leave=False)
@@ -384,6 +451,10 @@ def split_to_tiles(
     if "id" not in gdf.columns:
         gdf["id"] = [f"feature_{i}" for i in range(len(gdf))]
 
+    for col in ("object_category", "source_type", "highway", "railway", "bridge", "tunnel", "layer"):
+        if col not in gdf.columns:
+            gdf[col] = None
+
     crs_text = gdf.crs.to_string() if gdf.crs is not None else None
 
     minx, miny, maxx, maxy = gdf.total_bounds
@@ -395,6 +466,7 @@ def split_to_tiles(
     sindex = gdf.sindex
     qualified = []
     skipped_tiles = 0
+    total_road_samples = 0
     total_tiles = len(x_ranges) * len(y_ranges)
 
     progress_iter = _iter_with_progress(
@@ -425,12 +497,19 @@ def split_to_tiles(
         if tile_gdf.empty:
             continue
 
-        building_count = len(tile_gdf)
+        road_mask = (
+            (tile_gdf["object_category"].astype(str).str.lower() == "road")
+            | (tile_gdf["source_type"].astype(str).str.lower() == "road")
+            | (tile_gdf["highway"].notna())
+        )
+        building_gdf = tile_gdf[~road_mask]
+
+        building_count = len(building_gdf)
         if building_count < min_buildings:
             continue
 
         buildings = []
-        for _, row in tile_gdf.iterrows():
+        for _, row in building_gdf.iterrows():
             geom = row.geometry
             row_dict = row.to_dict()
             oriented_bbox = _oriented_bbox_info(geom)
@@ -489,6 +568,36 @@ def split_to_tiles(
         buildings = _filter_overlapping_buildings(buildings)
         building_count = len(buildings)
 
+        road_samples = []
+        for _, row in tile_gdf[road_mask].iterrows():
+            if not _is_surface_road(row):
+                continue
+            row_dict = row.to_dict()
+            positions = []
+            for point in _road_sample_points(row.geometry):
+                px = int(round(point.x - x0))
+                py = int(round(point.y - y0))
+                positions.append([px, py])
+            if not positions:
+                continue
+            road_samples.append(
+                {
+                    "road_id": _json_safe(row_dict.get("id") or row.name),
+                    "name": _json_safe(row_dict.get("name")),
+                    "type": {
+                        "object_category": "road",
+                        "source_type": _json_safe(row_dict.get("source_type")),
+                        "highway": _json_safe(row_dict.get("highway")),
+                        "class": _json_safe(row_dict.get("class")),
+                        "subtype": _json_safe(row_dict.get("subtype")),
+                    },
+                    "positions": positions,
+                    "point_count": len(positions),
+                }
+            )
+
+        total_road_samples += sum(sample["point_count"] for sample in road_samples)
+
         tile_id = f"tile_x{ix}_y{iy}"
         tile_data = {
             "tile_id": tile_id,
@@ -500,6 +609,8 @@ def split_to_tiles(
             },
             "building_count": int(building_count),
             "buildings": buildings,
+            "road_samples": road_samples,
+            "road_sample_count": len(road_samples),
         }
 
         tile_file = out_dir / f"{tile_id}.json"
@@ -526,6 +637,7 @@ def split_to_tiles(
         "qualified_tile_count": len(qualified),
         "qualified_tiles": qualified,
         "skipped_existing_tiles": skipped_tiles,
+        "total_road_samples": total_road_samples,
     }
 
     summary_file = out_dir / "summary.json"

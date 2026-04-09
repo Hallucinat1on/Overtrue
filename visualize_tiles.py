@@ -54,6 +54,8 @@ def _type_label(type_field):
             return type_field["object_category"]
         if type_field.get("source_type"):
             return type_field["source_type"]
+        if type_field.get("highway"):
+            return type_field["highway"]
         if type_field.get("building_levels") is not None:
             return f"levels_{type_field['building_levels']}"
         if type_field.get("height") is not None:
@@ -64,12 +66,20 @@ def _type_label(type_field):
     return str(type_field)
 
 
-def _random_color(rng: random.Random) -> tuple:
+def _random_color(rng_or_seed) -> tuple:
+    if not isinstance(rng_or_seed, random.Random):
+        rng = random.Random(rng_or_seed)
+    else:
+        rng = rng_or_seed
     h = rng.random()
     s = 0.6 + rng.random() * 0.3
     v = 0.7 + rng.random() * 0.2
     color = plt.cm.hsv(h)
     return (color[0], color[1], color[2])
+
+
+def _build_road_line(points: List[List[int]]) -> List[tuple]:
+    return [(p[0], p[1]) for p in points]
 
 
 def _build_type_colors(labels: List[str], seed: Optional[int] = None) -> Dict[str, tuple]:
@@ -85,16 +95,28 @@ def visualize_tile(input_path: Path, output_path: Path, dpi: int = 200, type_col
         data = json.load(f)
 
     buildings = data.get("buildings", [])
-    if not buildings:
-        raise ValueError("Tile JSON has no buildings")
+    road_samples = data.get("road_samples", [])
+    if not buildings and not road_samples:
+        raise ValueError("Tile JSON has no buildings or road samples")
 
-    minx = min((b["position"][0] - b["bbox"]["length"] / 2.0) for b in buildings)
-    miny = min((b["position"][1] - b["bbox"]["width"] / 2.0) for b in buildings)
-    maxx = max((b["position"][0] + b["bbox"]["length"] / 2.0) for b in buildings)
-    maxy = max((b["position"][1] + b["bbox"]["width"] / 2.0) for b in buildings)
+    xs = []
+    ys = []
+    for b in buildings:
+        xs.extend([b["position"][0] - b["bbox"]["length"] / 2.0, b["position"][0] + b["bbox"]["length"] / 2.0])
+        ys.extend([b["position"][1] - b["bbox"]["width"] / 2.0, b["position"][1] + b["bbox"]["width"] / 2.0])
+    for r in road_samples:
+        for point in r.get("positions", []):
+            xs.append(point[0])
+            ys.append(point[1])
+
+    minx = min(xs)
+    miny = min(ys)
+    maxx = max(xs)
+    maxy = max(ys)
 
     if type_colors is None:
         labels = [_type_label(b.get("type")) for b in buildings if b.get("type") is not None]
+        labels += [_type_label(r.get("type")) for r in road_samples if r.get("type") is not None]
         type_colors = _build_type_colors(sorted(set(labels)))
     fig, ax = plt.subplots(figsize=(8, 8))
     for b in buildings:
@@ -116,6 +138,16 @@ def visualize_tile(input_path: Path, output_path: Path, dpi: int = 200, type_col
         rect = _build_rectangle(pos[0], pos[1], length, width, rot)
         patch = Polygon(rect, closed=True, edgecolor="black", facecolor=type_colors[label], linewidth=0.5, alpha=0.7)
         ax.add_patch(patch)
+
+    for r in road_samples:
+        pts = r.get("positions", [])
+        if not pts:
+            continue
+        xs, ys = zip(*_build_road_line(pts))
+        label = _type_label(r.get("type"))
+        if label not in type_colors:
+            type_colors[label] = _random_color(label)
+        ax.plot(xs, ys, color=type_colors[label], linewidth=2.0, alpha=0.8, solid_capstyle="round")
 
     handles = [Patch(facecolor=col, edgecolor="black", label=lbl, alpha=0.7) for lbl, col in type_colors.items()]
     ax.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.8)
@@ -147,6 +179,8 @@ def visualize_folder(input_dir: Path, output_dir: Path, dpi: int = 200) -> None:
             data = json.load(f)
         for b in data.get("buildings", []):
             labels.add(_type_label(b.get("type")))
+        for r in data.get("road_samples", []):
+            labels.add(_type_label(r.get("type")))
 
     type_colors = _build_type_colors(sorted(labels), seed=random.randrange(2**32))
 
