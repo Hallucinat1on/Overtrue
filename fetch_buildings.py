@@ -6,7 +6,7 @@ named all_features.geojson.
 This script is designed to be compatible with downstream processing that expects
 fields like object_category and building:levels.
 
-example:
+Usage:
 python fetch_buildings.py \
   --bbox "39.95,116.25;40.05,116.38" \
   --out_dir raw/beijing_haidian \

@@ -7,7 +7,7 @@ Each tile JSON includes:
 - Building data with tile-relative bbox dimensions and position
 - Rotation angle, bbox length/width/height, name, and type
 
-Example:
+Usage:
 python split_tiles.py \
     --input raw/newyork_manhattan/all_features.geojson \
     --out_dir processed/newyork_manhattan \
