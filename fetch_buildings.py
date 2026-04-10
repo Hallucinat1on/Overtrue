@@ -11,12 +11,34 @@ python fetch_buildings.py \
   --bbox "39.95,116.25;40.05,116.38" \
   --out_dir raw/beijing_haidian \
   --target_crs EPSG:32651 \
-  --include_parts
+  --include_parts \
+  --include_roads
 
 python fetch_buildings.py \
   --bbox "40.70,-74.02;40.88,-73.92" \
   --out_dir raw/newyork_manhattan \
   --target_crs EPSG:32618 \
+  --include_parts \
+  --include_roads
+
+python fetch_buildings.py \
+  --bbox "35.65,139.68;35.72,139.77" \
+  --out_dir raw/tokyo_shibuya \
+  --target_crs EPSG:32654 \
+  --include_parts \
+  --include_roads
+
+python fetch_buildings.py \
+  --bbox "22.27,114.15;22.33,114.21" \
+  --out_dir raw/hongkong_kowloon \
+  --target_crs EPSG:32650 \
+  --include_parts \
+  --include_roads
+
+python fetch_buildings.py \
+  --bbox "51.48,-0.15;51.53,-0.05" \
+  --out_dir raw/london_central \
+  --target_crs EPSG:32630 \
   --include_parts \
   --include_roads
 """

@@ -2,6 +2,7 @@
 """Count building and road objects in tile JSON files.
 
 Usage:
+python count_tile_objects.py --input_dir processed/beijing_haidian
 python count_tile_objects.py --input_dir processed/newyork_manhattan
 """
 
@@ -22,10 +23,17 @@ def count_objects_in_file(path: Path) -> Dict[str, Any]:
     if not isinstance(road_samples, list):
         road_samples = []
 
+    road_point_count = 0
+    for road in road_samples:
+        pos = road.get("positions")
+        if isinstance(pos, list):
+            road_point_count += len(pos)
+
     return {
         "file": str(path),
         "building_count": len(buildings),
         "road_count": len(road_samples),
+        "road_point_count": road_point_count,
         "total_count": len(buildings) + len(road_samples),
     }
 
@@ -57,17 +65,24 @@ def main() -> None:
 
     top_buildings = sorted(records, key=lambda r: r["building_count"], reverse=True)[: args.top]
     top_roads = sorted(records, key=lambda r: r["road_count"], reverse=True)[: args.top]
+    top_road_points = sorted(records, key=lambda r: r["road_point_count"], reverse=True)[: args.top]
 
     print(f"Top {args.top} files by building count:")
-    print("file,building_count,road_count")
+    print("file    building_count    road_count    road_point_count")
     for rec in top_buildings:
-        print(f"{rec['file']},{rec['building_count']},{rec['road_count']}")
+        print(f"{rec['file']}, {rec['building_count']}, {rec['road_count']}, {rec['road_point_count']}")
 
     print()
-    print(f"Top {args.top} files by road count:")
-    print("file,road_count,building_count")
+    print(f"Top {args.top} files by road object count:")
+    print("file    road_count    building_count    road_point_count")
     for rec in top_roads:
-        print(f"{rec['file']},{rec['road_count']},{rec['building_count']}")
+        print(f"{rec['file']}, {rec['road_count']}, {rec['building_count']}, {rec['road_point_count']}")
+
+    print()
+    print(f"Top {args.top} files by road sample point count:")
+    print("file    road_point_count    road_count    building_count")
+    for rec in top_road_points:
+        print(f"{rec['file']}, {rec['road_point_count']}, {rec['road_count']}, {rec['building_count']}")
 
 
 if __name__ == "__main__":
