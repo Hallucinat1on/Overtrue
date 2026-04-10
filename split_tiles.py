@@ -345,6 +345,15 @@ def _road_sample_points(geom, spacing: float = 20.0) -> List[Any]:
     return points
 
 
+def _clip_road_points_to_tile(geom, tile_poly, spacing: float = 20.0) -> List[Any]:
+    if geom is None or geom.is_empty:
+        return []
+    clipped = geom.intersection(tile_poly)
+    if clipped is None or clipped.is_empty:
+        return []
+    return _road_sample_points(clipped, spacing)
+
+
 def _iter_with_progress(iterable, total: Optional[int] = None, desc: Optional[str] = None):
     if tqdm is not None:
         return tqdm(iterable, total=total, desc=desc, unit="tile", leave=False)
@@ -574,7 +583,7 @@ def split_to_tiles(
                 continue
             row_dict = row.to_dict()
             positions = []
-            for point in _road_sample_points(row.geometry):
+            for point in _clip_road_points_to_tile(row.geometry, tile_poly):
                 px = int(round(point.x - x0))
                 py = int(round(point.y - y0))
                 positions.append([px, py])
