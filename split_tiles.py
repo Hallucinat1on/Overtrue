@@ -14,6 +14,14 @@ python split_tiles.py \
     --tile_size 400 \
     --tile_step 200 \
     --min_buildings 200
+
+python split_tiles.py \
+    --input raw/beijing_haidian/all_features.geojson \
+    --out_dir processed/beijing_haidian_contour \
+    --tile_size 400 \
+    --tile_step 200 \
+    --min_buildings 200 \
+    --save_contours
 """
 
 import argparse
@@ -114,6 +122,27 @@ def _oriented_bbox_info(geom) -> Optional[Dict[str, Any]]:
         "height": float(height),
         "rotation_deg": float(angle),
     }
+
+
+def _extract_polygon_contours(geom) -> List[List[List[float]]]:
+    if geom is None or geom.is_empty:
+        return []
+
+    if geom.geom_type == "Polygon":
+        return [[[float(x), float(y)] for x, y in geom.exterior.coords]]
+    if geom.geom_type == "MultiPolygon":
+        return [
+            [[float(x), float(y)] for x, y in poly.exterior.coords] for poly in geom.geoms if poly is not None and not poly.is_empty
+        ]
+    if geom.geom_type in {"LineString", "LinearRing"}:
+        return [[[float(x), float(y)] for x, y in geom.coords]]
+    if geom.geom_type == "MultiLineString":
+        return [[[float(x), float(y)] for x, y in line.coords] for line in geom.geoms if line is not None and not line.is_empty]
+    return []
+
+
+def _translate_contours(contours: List[List[List[float]]], dx: float, dy: float) -> List[List[List[float]]]:
+    return [[[float(x) - dx, float(y) - dy] for x, y in poly] for poly in contours]
 
 
 def _build_tile_ranges(min_v: float, max_v: float, tile_size: float, tile_step: float) -> Iterable[Tuple[float, float]]:
@@ -437,6 +466,7 @@ def split_to_tiles(
     tile_size: float,
     tile_step: float,
     min_buildings: int,
+    save_contours: bool = False,
 ) -> Dict[str, Any]:
     if tile_size <= 0:
         raise ValueError("tile_size must be positive")
@@ -553,26 +583,29 @@ def split_to_tiles(
                 center_x = ((minx + maxx) / 2.0) - x0
                 center_y = ((miny + maxy) / 2.0) - y0
 
-            bbox_dims = {
-                "length": length,
-                "width": width,
-                "height": int(round(height_value)),
-            }
             position = [
                 int(round(center_x)),
                 int(round(center_y)),
             ]
-
-            buildings.append(
-                {
-                    "rotation_deg": int(round(oriented_bbox["rotation_deg"])) if oriented_bbox is not None else 0,
-                    "bbox": bbox_dims,
-                    "position": position,
-                    "name": name_type.get("name"),
-                    "type": name_type.get("type"),
-                    "__overlap_poly": overlap_poly,
+            building_item = {
+                "rotation_deg": int(round(oriented_bbox["rotation_deg"])) if oriented_bbox is not None else 0,
+                "position": position,
+                "name": name_type.get("name"),
+                "type": name_type.get("type"),
+                "__overlap_poly": overlap_poly,
+            }
+            if save_contours:
+                contours = _extract_polygon_contours(geom)
+                building_item["contour"] = _translate_contours(contours, x0, y0)
+            else:
+                bbox_dims = {
+                    "length": length,
+                    "width": width,
+                    "height": int(round(height_value)),
                 }
-            )
+                building_item["bbox"] = bbox_dims
+
+            buildings.append(building_item)
 
         buildings = _filter_overlapping_buildings(buildings)
         building_count = len(buildings)
@@ -642,6 +675,7 @@ def split_to_tiles(
         "tile_size": float(tile_size),
         "tile_step": float(tile_step),
         "min_buildings": int(min_buildings),
+        "save_contours": bool(save_contours),
         "total_tiles_scanned": total_tiles,
         "qualified_tile_count": len(qualified),
         "qualified_tiles": qualified,
@@ -665,6 +699,7 @@ def main() -> None:
     parser.add_argument("--tile_size", type=float, default=800.0, help="Tile size in current CRS units (meters for UTM)")
     parser.add_argument("--tile_step", type=float, default=None, help="Step/stride for tile origin in current CRS units")
     parser.add_argument("--min_buildings", type=int, default=30, help="Minimum building count to keep a tile")
+    parser.add_argument("--save_contours", action="store_true", help="Save building polygon contours instead of bbox")
     args = parser.parse_args()
 
     tile_step = args.tile_step if args.tile_step is not None else args.tile_size
@@ -675,6 +710,7 @@ def main() -> None:
         tile_size=args.tile_size,
         tile_step=tile_step,
         min_buildings=args.min_buildings,
+        save_contours=args.save_contours,
     )
 
     print(f"Qualified tiles: {summary['qualified_tile_count']}")

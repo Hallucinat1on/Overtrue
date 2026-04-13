@@ -10,6 +10,11 @@ python visualize_tiles.py \
 python visualize_tiles.py \
   --input_dir processed/newyork_manhattan \
   --output_dir processed/newyork_manhattan
+
+python visualize_tiles.py \
+  --input_dir processed/beijing_haidian_contour \
+  --output_dir processed/beijing_haidian_contour \
+  --use_contours
 """
 
 import argparse
@@ -90,7 +95,9 @@ def _build_type_colors(labels: List[str], seed: Optional[int] = None) -> Dict[st
     return colors
 
 
-def visualize_tile(input_path: Path, output_path: Path, dpi: int = 200, type_colors: Optional[Dict[str, tuple]] = None):
+def visualize_tile(
+    input_path: Path, output_path: Path, dpi: int = 200, type_colors: Optional[Dict[str, tuple]] = None, use_contours: bool = False
+):
     with input_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -102,8 +109,15 @@ def visualize_tile(input_path: Path, output_path: Path, dpi: int = 200, type_col
     xs = []
     ys = []
     for b in buildings:
-        xs.extend([b["position"][0] - b["bbox"]["length"] / 2.0, b["position"][0] + b["bbox"]["length"] / 2.0])
-        ys.extend([b["position"][1] - b["bbox"]["width"] / 2.0, b["position"][1] + b["bbox"]["width"] / 2.0])
+        contour = b.get("contour")
+        if use_contours and contour:
+            for poly in contour:
+                for x, y in poly:
+                    xs.append(x)
+                    ys.append(y)
+        else:
+            xs.extend([b["position"][0] - b["bbox"]["length"] / 2.0, b["position"][0] + b["bbox"]["length"] / 2.0])
+            ys.extend([b["position"][1] - b["bbox"]["width"] / 2.0, b["position"][1] + b["bbox"]["width"] / 2.0])
     for r in road_samples:
         for point in r.get("positions", []):
             xs.append(point[0])
@@ -120,6 +134,19 @@ def visualize_tile(input_path: Path, output_path: Path, dpi: int = 200, type_col
         type_colors = _build_type_colors(sorted(set(labels)))
     fig, ax = plt.subplots(figsize=(8, 8))
     for b in buildings:
+        label = _type_label(b.get("type"))
+        if label not in type_colors:
+            type_colors[label] = _random_color(label)
+
+        contour = b.get("contour")
+        if use_contours and contour:
+            for poly in contour:
+                if not poly:
+                    continue
+                patch = Polygon(poly, closed=True, edgecolor="black", facecolor=type_colors[label], linewidth=0.5, alpha=0.7)
+                ax.add_patch(patch)
+            continue
+
         pos = b.get("position")
         bbox = b.get("bbox", {})
         rot = b.get("rotation_deg", 0)
@@ -130,10 +157,6 @@ def visualize_tile(input_path: Path, output_path: Path, dpi: int = 200, type_col
         width = bbox.get("width")
         if length is None or width is None:
             continue
-
-        label = _type_label(b.get("type"))
-        if label not in type_colors:
-            type_colors[label] = _random_color(label)
 
         rect = _build_rectangle(pos[0], pos[1], length, width, rot)
         patch = Polygon(rect, closed=True, edgecolor="black", facecolor=type_colors[label], linewidth=0.5, alpha=0.7)
@@ -163,7 +186,7 @@ def visualize_tile(input_path: Path, output_path: Path, dpi: int = 200, type_col
     plt.close(fig)
 
 
-def visualize_folder(input_dir: Path, output_dir: Path, dpi: int = 200) -> None:
+def visualize_folder(input_dir: Path, output_dir: Path, dpi: int = 200, use_contours: bool = False) -> None:
     input_dir = input_dir.resolve()
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -187,7 +210,7 @@ def visualize_folder(input_dir: Path, output_dir: Path, dpi: int = 200) -> None:
     for path in json_files:
         out_path = output_dir / f"{path.stem}.png"
         try:
-            visualize_tile(path, out_path, dpi=dpi, type_colors=type_colors)
+            visualize_tile(path, out_path, dpi=dpi, type_colors=type_colors, use_contours=use_contours)
             print(f"Saved {out_path}")
         except ValueError as e:
             print(f"Skip {path}: {e}")
@@ -201,16 +224,19 @@ def main() -> None:
     parser.add_argument("--output", type=str, help="Output image path for a single tile")
     parser.add_argument("--output_dir", type=str, help="Output directory for batch visualization")
     parser.add_argument("--dpi", type=int, default=200, help="Output image DPI")
+    parser.add_argument(
+        "--use_contours", action="store_true", help="Render building contours from contour points instead of bbox rectangles"
+    )
     args = parser.parse_args()
 
     if args.input:
         if not args.output:
             parser.error("--output is required when --input is used")
-        visualize_tile(Path(args.input), Path(args.output), dpi=args.dpi)
+        visualize_tile(Path(args.input), Path(args.output), dpi=args.dpi, use_contours=args.use_contours)
     else:
         if not args.output_dir:
             parser.error("--output_dir is required when --input_dir is used")
-        visualize_folder(Path(args.input_dir), Path(args.output_dir), dpi=args.dpi)
+        visualize_folder(Path(args.input_dir), Path(args.output_dir), dpi=args.dpi, use_contours=args.use_contours)
 
 
 if __name__ == "__main__":
