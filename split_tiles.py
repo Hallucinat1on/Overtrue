@@ -5,7 +5,7 @@ Split building GeoJSON into fixed-size tiles and export each qualified tile to J
 Each tile JSON includes:
 - Tile metadata (bbox, CRS)
 - Building data with tile-relative bbox dimensions and position
-- Rotation angle, bbox length/width/height, name, and type
+- Rotation angle, bbox length/width/height, contour coordinates, name, and type
 
 Usage:
 python split_tiles.py \
@@ -16,18 +16,19 @@ python split_tiles.py \
     --min_buildings 200
 
 python split_tiles.py \
-    --input raw/beijing_haidian/all_features.geojson \
-    --out_dir processed/beijing_haidian_contour \
+    --input raw/singapore_marina/all_features.geojson \
+    --out_dir processed/singapore_marina \
     --tile_size 400 \
     --tile_step 200 \
-    --min_buildings 200 \
-    --save_contours
+    --min_buildings 200
+    
 """
 
 import argparse
 import importlib
 import json
 import math
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -154,6 +155,16 @@ def _build_tile_ranges(min_v: float, max_v: float, tile_size: float, tile_step: 
         nxt = cur + tile_size
         yield cur, nxt
         cur = cur + tile_step
+
+
+def _extract_building_category(type_dict: Dict[str, Any]) -> Optional[str]:
+    if not isinstance(type_dict, dict):
+        return None
+    for key in ("subtype", "class", "source_type", "object_category"):
+        value = type_dict.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _extract_name_and_type(row_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -466,7 +477,6 @@ def split_to_tiles(
     tile_size: float,
     tile_step: float,
     min_buildings: int,
-    save_contours: bool = False,
 ) -> Dict[str, Any]:
     if tile_size <= 0:
         raise ValueError("tile_size must be positive")
@@ -504,6 +514,7 @@ def split_to_tiles(
 
     sindex = gdf.sindex
     qualified = []
+    building_category_counts = Counter()
     skipped_tiles = 0
     total_road_samples = 0
     total_tiles = len(x_ranges) * len(y_ranges)
@@ -594,21 +605,24 @@ def split_to_tiles(
                 "type": name_type.get("type"),
                 "__overlap_poly": overlap_poly,
             }
-            if save_contours:
-                contours = _extract_polygon_contours(geom)
-                building_item["contour"] = _translate_contours(contours, x0, y0)
-            else:
-                bbox_dims = {
-                    "length": length,
-                    "width": width,
-                    "height": int(round(height_value)),
-                }
-                building_item["bbox"] = bbox_dims
+            contours = _extract_polygon_contours(geom)
+            building_item["contour"] = _translate_contours(contours, x0, y0)
+            bbox_dims = {
+                "length": length,
+                "width": width,
+                "height": int(round(height_value)),
+            }
+            building_item["bbox"] = bbox_dims
 
             buildings.append(building_item)
 
         buildings = _filter_overlapping_buildings(buildings)
         building_count = len(buildings)
+
+        for b in buildings:
+            category = _extract_building_category(b.get("type") or {})
+            if category:
+                building_category_counts[category] += 1
 
         road_samples = []
         for _, row in tile_gdf[road_mask].iterrows():
@@ -675,7 +689,7 @@ def split_to_tiles(
         "tile_size": float(tile_size),
         "tile_step": float(tile_step),
         "min_buildings": int(min_buildings),
-        "save_contours": bool(save_contours),
+        "building_category": {k: int(v) for k, v in building_category_counts.items()},
         "total_tiles_scanned": total_tiles,
         "qualified_tile_count": len(qualified),
         "qualified_tiles": qualified,
@@ -699,7 +713,6 @@ def main() -> None:
     parser.add_argument("--tile_size", type=float, default=800.0, help="Tile size in current CRS units (meters for UTM)")
     parser.add_argument("--tile_step", type=float, default=None, help="Step/stride for tile origin in current CRS units")
     parser.add_argument("--min_buildings", type=int, default=30, help="Minimum building count to keep a tile")
-    parser.add_argument("--save_contours", action="store_true", help="Save building polygon contours instead of bbox")
     args = parser.parse_args()
 
     tile_step = args.tile_step if args.tile_step is not None else args.tile_size
@@ -710,7 +723,6 @@ def main() -> None:
         tile_size=args.tile_size,
         tile_step=tile_step,
         min_buildings=args.min_buildings,
-        save_contours=args.save_contours,
     )
 
     print(f"Qualified tiles: {summary['qualified_tile_count']}")

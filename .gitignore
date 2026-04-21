@@ -1,4 +1,6 @@
 __pycache__/
 processed/
+test/
 raw/
+
 .DS_Store

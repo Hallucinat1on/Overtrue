@@ -41,6 +41,34 @@ python fetch_buildings.py \
   --target_crs EPSG:32630 \
   --include_parts \
   --include_roads
+
+python fetch_buildings.py \
+  --bbox "22.52,114.03;22.58,114.12" \
+  --out_dir raw/shenzhen_futian \
+  --target_crs EPSG:32650 \
+  --include_parts \
+  --include_roads
+
+python fetch_buildings.py \
+  --bbox "48.84,2.31;48.87,2.37" \
+  --out_dir raw/paris_centre \
+  --target_crs EPSG:32631 \
+  --include_parts \
+  --include_roads
+
+python fetch_buildings.py \
+  --bbox "1.27,103.82;1.30,103.86" \
+  --out_dir raw/singapore_marina \
+  --target_crs EPSG:32648 \
+  --include_parts \
+  --include_roads
+
+python fetch_buildings.py \
+  --bbox "40.70,-74.02;40.75,-73.97" \
+  --out_dir raw/newyork_midtown \
+  --target_crs EPSG:32618 \
+  --include_parts \
+  --include_roads
 """
 
 import argparse
