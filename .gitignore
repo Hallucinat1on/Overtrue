@@ -3,4 +3,7 @@ processed/
 test/
 raw/
 
+val.txt
+train.txt
+
 .DS_Store
