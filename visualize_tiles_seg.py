@@ -4,8 +4,7 @@ Visualize a tile JSON file with fixed distinct colors on a black background.
 
 Usage:
   python visualize_tiles_seg.py --input processed/newyork_manhattan/tile_x43_y63.json --output test.png
-  python visualize_tiles_seg.py --input_dir processed/newyork_manhattan --output_dir test
-  python visualize_tiles_seg.py --input_dir processed/beijing_haidian --output_dir test
+  python visualize_tiles_seg.py --input_dir processed/tokyo_shibuya --output_dir processed/tokyo_shibuya
 """
 
 import argparse
@@ -177,7 +176,7 @@ def visualize_tile(
             for poly in contour:
                 if not poly:
                     continue
-                patch = Polygon(poly, closed=True, edgecolor=color, facecolor=color, linewidth=0.0, alpha=1.0, zorder=2)
+                patch = Polygon(poly, closed=True, edgecolor="black", facecolor=color, linewidth=0.7, alpha=1.0, zorder=2)
                 ax.add_patch(patch)
                 if len(poly) >= 3:
                     bldg_polys.append(ShapelyPolygon(poly))
@@ -195,7 +194,7 @@ def visualize_tile(
             continue
 
         rect = _build_rectangle(pos[0], pos[1], length, width, rot)
-        patch = Polygon(rect, closed=True, edgecolor=color, facecolor=color, linewidth=0.0, alpha=1.0, zorder=2)
+        patch = Polygon(rect, closed=True, edgecolor="black", facecolor=color, linewidth=0.7, alpha=1.0, zorder=2)
         ax.add_patch(patch)
         if len(rect) >= 3:
             bldg_polys.append(ShapelyPolygon(rect))
@@ -207,6 +206,13 @@ def visualize_tile(
 
     road_color = color_map.get("road", (0.5, 0.5, 0.5))
     for r in road_samples:
+        road_type = r.get("type")
+        road_class = ""
+        if isinstance(road_type, dict):
+            road_class = str(road_type.get("class") or "").strip().lower()
+        if road_class in {"unknown", "water", "footway", "steps", "cycleway", "subway"}:
+            continue
+
         pts = r.get("positions", [])
         if len(pts) < 2:
             continue
@@ -225,19 +231,39 @@ def visualize_tile(
         for geom in geoms:
             if geom.length > MIN_ROAD_LENGTH:
                 xs_line, ys_line = geom.xy
+                # 绘制黑色边框
+                ax.plot(
+                    xs_line,
+                    ys_line,
+                    color="black",
+                    linewidth=4.0,
+                    solid_capstyle="round",
+                    solid_joinstyle="round",
+                    alpha=1.0,
+                    zorder=1,
+                )
+                # 绘制彩色道路中线
                 ax.plot(
                     xs_line,
                     ys_line,
                     color=road_color,
-                    linewidth=3.0,
+                    linewidth=2.5,
                     solid_capstyle="round",
                     solid_joinstyle="round",
                     alpha=1.0,
                     zorder=1,
                 )
 
-    ax.set_xlim(minx - 10, maxx + 10)
-    ax.set_ylim(miny - 10, maxy + 10)
+    x_span = maxx - minx
+    y_span = maxy - miny
+    span = max(x_span, y_span)
+    margin = 2.0
+    center_x = (minx + maxx) / 2.0
+    center_y = (miny + maxy) / 2.0
+    half_span = span / 2.0 + margin
+
+    ax.set_xlim(center_x - half_span, center_x + half_span)
+    ax.set_ylim(center_y - half_span, center_y + half_span)
     ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
 
@@ -282,7 +308,7 @@ def main() -> None:
     parser.add_argument("--config", type=str, default="processed/color.json", help="Map building to parent categories and colors")
     parser.add_argument("--dpi", type=int, default=256, help="Output image DPI")
     parser.add_argument("--use_contours", type=bool, default=True, help="Render building contours instead of bbox rectangles")
-    parser.add_argument("--min_building_area", type=float, default=4.0, help="Skip buildings whose area is below this threshold")
+    parser.add_argument("--min_building_area", type=float, default=8.0, help="Skip buildings whose area is below this threshold")
     args = parser.parse_args()
 
     config_path = Path(args.config)
