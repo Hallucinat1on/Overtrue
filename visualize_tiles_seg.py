@@ -4,7 +4,12 @@ Visualize a tile JSON file with fixed distinct colors on a black background.
 
 Usage:
   python visualize_tiles_seg.py --input processed/newyork_manhattan/tile_x43_y63.json --output test.png
-  python visualize_tiles_seg.py --input_dir processed/tokyo_shibuya --output_dir processed/tokyo_shibuya
+
+  python visualize_tiles_seg.py --input_dir processed/paris_centre --output_dir processed/paris_centre
+  python visualize_tiles_seg.py --input_dir processed/london_central --output_dir processed/london_central
+  python visualize_tiles_seg.py --input_dir processed/newyork_midtown --output_dir processed/newyork_midtown
+  python visualize_tiles_seg.py --input_dir processed/hongkong_kowloon --output_dir processed/hongkong_kowloon
+  python visualize_tiles_seg.py --input_dir processed/singapore_marina --output_dir processed/singapore_marina
 """
 
 import argparse
@@ -96,7 +101,6 @@ def _build_rectangle(center_x, center_y, length, width, rotation_deg):
     return out
 
 
-
 def visualize_tile(
     input_path: Path,
     output_path: Path,
@@ -156,7 +160,7 @@ def visualize_tile(
             for poly in contour:
                 if not poly:
                     continue
-                patch = Polygon(poly, closed=True, edgecolor="black", facecolor=color, linewidth=0.5, alpha=1.0, zorder=2)
+                patch = Polygon(poly, closed=True, edgecolor="black", facecolor=color, linewidth=1.0, alpha=1.0, zorder=2)
                 ax.add_patch(patch)
                 if len(poly) >= 3:
                     bldg_polys.append(ShapelyPolygon(poly))
@@ -180,9 +184,6 @@ def visualize_tile(
             bldg_polys.append(ShapelyPolygon(rect))
 
     buildings_union = unary_union(bldg_polys) if bldg_polys else ShapelyPolygon()
-
-    # Threshold for dropping tiny road segments (e.g. 15 meters)
-    MIN_ROAD_LENGTH = 15.0
 
     road_color = color_map.get("road", (0.5, 0.5, 0.5))
     for r in road_samples:
@@ -209,30 +210,29 @@ def visualize_tile(
         geoms = [diff] if diff.geom_type == "LineString" else diff.geoms
 
         for geom in geoms:
-            if geom.length > MIN_ROAD_LENGTH:
-                xs_line, ys_line = geom.xy
-                # 绘制黑色边框
-                # ax.plot(
-                #     xs_line,
-                #     ys_line,
-                #     color="black",
-                #     linewidth=4.0,
-                #     solid_capstyle="round",
-                #     solid_joinstyle="round",
-                #     alpha=1.0,
-                #     zorder=1,
-                # )
-                # 绘制彩色道路中线
-                ax.plot(
-                    xs_line,
-                    ys_line,
-                    color=road_color,
-                    linewidth=2.5,
-                    solid_capstyle="round",
-                    solid_joinstyle="round",
-                    alpha=1.0,
-                    zorder=1,
-                )
+            xs_line, ys_line = geom.xy
+            # 绘制黑色边框
+            # ax.plot(
+            #     xs_line,
+            #     ys_line,
+            #     color="black",
+            #     linewidth=4.0,
+            #     solid_capstyle="round",
+            #     solid_joinstyle="round",
+            #     alpha=1.0,
+            #     zorder=1,
+            # )
+            # 绘制彩色道路中线
+            ax.plot(
+                xs_line,
+                ys_line,
+                color=road_color,
+                linewidth=5,
+                solid_capstyle="round",
+                solid_joinstyle="round",
+                alpha=1.0,
+                zorder=1,
+            )
 
     x_span = maxx - minx
     y_span = maxy - miny
@@ -248,7 +248,7 @@ def visualize_tile(
     ax.axis("off")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=dpi, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0)
+    fig.savefig(output_path, dpi=dpi, facecolor=fig.get_facecolor(), pad_inches=0)
     plt.close(fig)
 
 

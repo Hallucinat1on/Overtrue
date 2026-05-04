@@ -78,21 +78,11 @@ def collect_png_paths(root_dir: Path):
 
 def main():
     parser = argparse.ArgumentParser(description="递归收集 PNG 图片，提取 JSON 条件向量，并保存到 TXT 文件")
-    parser.add_argument(
-        "--input_dir", default="/opt/data/private/yihengxu/MajutsuCity/layout_gen/datasets/processed", help="要扫描的输入目录"
-    )
-    parser.add_argument("--config", default="processed-400/color.json", help="类别映射配置文件")
+    parser.add_argument("--input_dir", default="processed", help="要扫描的输入目录")
+    parser.add_argument("--config", default="processed/color.json", help="类别映射配置文件")
     parser.add_argument("--ratio", type=float, default=0.9, help="训练集比例，范围 0.0-1.0，默认 0.9")
-    parser.add_argument(
-        "--train_output",
-        default="/opt/data/private/yihengxu/MajutsuCity/layout_gen/datasets/train.txt",
-        help="训练集输出 TXT 文件路径，默认 train.txt",
-    )
-    parser.add_argument(
-        "--val_output",
-        default="/opt/data/private/yihengxu/MajutsuCity/layout_gen/datasets/val.txt",
-        help="验证集输出 TXT 文件路径，默认 val.txt",
-    )
+    parser.add_argument("--train_output", default="processed/train.txt", help="训练集输出 TXT 文件路径，默认 train.txt")
+    parser.add_argument("--val_output", default="processed/val.txt", help="验证集输出 TXT 文件路径，默认 val.txt")
     parser.add_argument("--seed", type=int, default=None, help="随机种子，默认不固定")
     args = parser.parse_args()
 

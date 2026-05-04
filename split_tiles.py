@@ -9,20 +9,24 @@ Each tile JSON includes:
 
 Usage:
 python split_tiles.py \
-    --input raw/newyork_manhattan/all_features.geojson \
-    --out_dir processed/newyork_manhattan \
-    --tile_size 200 \
-    --tile_step 100 \
-    --min_buildings 20 \
-    --min_side_length 3
+    --input raw/london_central/all_features.geojson \
+    --out_dir processed/london_central
+
+python split_tiles.py \
+    --input raw/hongkong_kowloon/all_features.geojson \
+    --out_dir processed/hongkong_kowloon
 
 python split_tiles.py \
     --input raw/singapore_marina/all_features.geojson \
-    --out_dir processed/singapore_marina \
-    --tile_size 200 \
-    --tile_step 100 \
-    --min_buildings 20 \
-    --min_side_length 3
+    --out_dir processed/singapore_marina
+
+python split_tiles.py \
+    --input raw/paris_centre/all_features.geojson \
+    --out_dir processed/paris_centre
+
+python split_tiles.py \
+    --input raw/newyork_midtown/all_features.geojson \
+    --out_dir processed/newyork_midtown
 """
 
 import argparse
@@ -399,14 +403,17 @@ def _iter_with_progress(iterable, total: Optional[int] = None, desc: Optional[st
     if tqdm is not None:
         return tqdm(iterable, total=total, desc=desc, unit="tile", leave=False)
     if total is not None and desc:
-        print(f"{desc}: 0/{total}", end="", flush=True)
-        count = 0
-        for item in iterable:
-            yield item
-            count += 1
-            print(f"\r{desc}: {count}/{total}", end="", flush=True)
-        print()
-        return
+
+        def _fallback_gen():
+            print(f"{desc}: 0/{total}", end="", flush=True)
+            count = 0
+            for item in iterable:
+                yield item
+                count += 1
+                print(f"\r{desc}: {count}/{total}", end="", flush=True)
+            print()
+
+        return _fallback_gen()
     return iterable
 
 
@@ -479,6 +486,7 @@ def split_to_tiles(
     tile_step: float,
     min_buildings: int,
     min_side_length: float = 0.0,
+    min_road_points: int = 0,
 ) -> Dict[str, Any]:
     if tile_size <= 0:
         raise ValueError("tile_size must be positive")
@@ -643,6 +651,8 @@ def split_to_tiles(
                 positions.append([px, py])
             if not positions:
                 continue
+            if len(positions) < min_road_points:
+                continue
             road_samples.append(
                 {
                     "road_id": _json_safe(row_dict.get("id") or row.name),
@@ -697,6 +707,7 @@ def split_to_tiles(
         "tile_step": float(tile_step),
         "min_buildings": int(min_buildings),
         "min_side_length": float(min_side_length),
+        "min_road_points": int(min_road_points),
         "building_category": {k: int(v) for k, v in building_category_counts.items()},
         "total_tiles_scanned": total_tiles,
         "qualified_tile_count": len(qualified),
@@ -718,10 +729,11 @@ def main() -> None:
     )
     parser.add_argument("--input", type=str, required=True, help="Input all_features.geojson path")
     parser.add_argument("--out_dir", type=str, required=True, help="Output directory for tile JSON files")
-    parser.add_argument("--tile_size", type=float, default=800.0, help="Tile size in current CRS units (meters for UTM)")
-    parser.add_argument("--tile_step", type=float, default=None, help="Step/stride for tile origin in current CRS units")
+    parser.add_argument("--tile_size", type=float, default=200.0, help="Tile size in current CRS units (meters for UTM)")
+    parser.add_argument("--tile_step", type=float, default=100.0, help="Step/stride for tile origin in current CRS units")
     parser.add_argument("--min_buildings", type=int, default=30, help="Minimum building count to keep a tile")
-    parser.add_argument("--min_side_length", type=float, default=3.0, help="Minimum bbox side length per building (skip if both length and width smaller)")
+    parser.add_argument("--min_side_length", type=float, default=4.0, help="Minimum bbox side length per building")
+    parser.add_argument("--min_road_points", type=int, default=3, help="Minimum points a single road object must have to be included")
     args = parser.parse_args()
 
     tile_step = args.tile_step if args.tile_step is not None else args.tile_size
@@ -733,6 +745,7 @@ def main() -> None:
         tile_step=tile_step,
         min_buildings=args.min_buildings,
         min_side_length=args.min_side_length,
+        min_road_points=args.min_road_points,
     )
 
     print(f"Qualified tiles: {summary['qualified_tile_count']}")
