@@ -11,17 +11,18 @@ Usage:
 python split_tiles.py \
     --input raw/newyork_manhattan/all_features.geojson \
     --out_dir processed/newyork_manhattan \
-    --tile_size 400 \
-    --tile_step 200 \
-    --min_buildings 200
+    --tile_size 200 \
+    --tile_step 100 \
+    --min_buildings 20 \
+    --min_side_length 3
 
 python split_tiles.py \
     --input raw/singapore_marina/all_features.geojson \
     --out_dir processed/singapore_marina \
-    --tile_size 400 \
-    --tile_step 200 \
-    --min_buildings 200
-    
+    --tile_size 200 \
+    --tile_step 100 \
+    --min_buildings 20 \
+    --min_side_length 3
 """
 
 import argparse
@@ -477,6 +478,7 @@ def split_to_tiles(
     tile_size: float,
     tile_step: float,
     min_buildings: int,
+    min_side_length: float = 0.0,
 ) -> Dict[str, Any]:
     if tile_size <= 0:
         raise ValueError("tile_size must be positive")
@@ -486,6 +488,8 @@ def split_to_tiles(
         raise ValueError("tile_step cannot be larger than tile_size")
     if min_buildings < 1:
         raise ValueError("min_buildings must be >= 1")
+    if min_side_length < 0:
+        raise ValueError("min_side_length must be >= 0")
 
     gdf = gpd.read_file(input_path)
     if gdf.empty:
@@ -582,6 +586,9 @@ def split_to_tiles(
                 bounds = geom.bounds
                 length = int(round(bounds[2] - bounds[0]))
                 width = int(round(bounds[3] - bounds[1]))
+
+            if min_side_length > 0 and (length < min_side_length or width < min_side_length):
+                continue
 
             if height_value is None:
                 height_value = 5
@@ -689,6 +696,7 @@ def split_to_tiles(
         "tile_size": float(tile_size),
         "tile_step": float(tile_step),
         "min_buildings": int(min_buildings),
+        "min_side_length": float(min_side_length),
         "building_category": {k: int(v) for k, v in building_category_counts.items()},
         "total_tiles_scanned": total_tiles,
         "qualified_tile_count": len(qualified),
@@ -713,6 +721,7 @@ def main() -> None:
     parser.add_argument("--tile_size", type=float, default=800.0, help="Tile size in current CRS units (meters for UTM)")
     parser.add_argument("--tile_step", type=float, default=None, help="Step/stride for tile origin in current CRS units")
     parser.add_argument("--min_buildings", type=int, default=30, help="Minimum building count to keep a tile")
+    parser.add_argument("--min_side_length", type=float, default=3.0, help="Minimum bbox side length per building (skip if both length and width smaller)")
     args = parser.parse_args()
 
     tile_step = args.tile_step if args.tile_step is not None else args.tile_size
@@ -723,6 +732,7 @@ def main() -> None:
         tile_size=args.tile_size,
         tile_step=tile_step,
         min_buildings=args.min_buildings,
+        min_side_length=args.min_side_length,
     )
 
     print(f"Qualified tiles: {summary['qualified_tile_count']}")

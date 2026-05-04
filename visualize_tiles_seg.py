@@ -96,21 +96,6 @@ def _build_rectangle(center_x, center_y, length, width, rotation_deg):
     return out
 
 
-def _building_area(building: dict, use_contours: bool) -> float:
-    if use_contours:
-        contour = building.get("contour")
-        if contour:
-            total_area = 0.0
-            for poly in contour:
-                if not poly or len(poly) < 3:
-                    continue
-                total_area += ShapelyPolygon(poly).area
-            return total_area
-    bbox = building.get("bbox") or {}
-    length = bbox.get("length") or 0.0
-    width = bbox.get("width") or 0.0
-    return float(length) * float(width)
-
 
 def visualize_tile(
     input_path: Path,
@@ -118,7 +103,6 @@ def visualize_tile(
     color_config: Path,
     dpi: int = 200,
     use_contours: bool = False,
-    min_building_area: float = 0.0,
 ) -> None:
     with input_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
@@ -163,10 +147,6 @@ def visualize_tile(
     bldg_polys = []
 
     for b in buildings:
-        area = _building_area(b, use_contours)
-        if area < min_building_area:
-            continue
-
         raw_label = _type_label(b.get("type"))
         category = _map_category(raw_label, building_map)
         color = _get_color_for_category(category, color_map)
@@ -176,7 +156,7 @@ def visualize_tile(
             for poly in contour:
                 if not poly:
                     continue
-                patch = Polygon(poly, closed=True, edgecolor="black", facecolor=color, linewidth=0.7, alpha=1.0, zorder=2)
+                patch = Polygon(poly, closed=True, edgecolor="black", facecolor=color, linewidth=0.5, alpha=1.0, zorder=2)
                 ax.add_patch(patch)
                 if len(poly) >= 3:
                     bldg_polys.append(ShapelyPolygon(poly))
@@ -232,16 +212,16 @@ def visualize_tile(
             if geom.length > MIN_ROAD_LENGTH:
                 xs_line, ys_line = geom.xy
                 # 绘制黑色边框
-                ax.plot(
-                    xs_line,
-                    ys_line,
-                    color="black",
-                    linewidth=4.0,
-                    solid_capstyle="round",
-                    solid_joinstyle="round",
-                    alpha=1.0,
-                    zorder=1,
-                )
+                # ax.plot(
+                #     xs_line,
+                #     ys_line,
+                #     color="black",
+                #     linewidth=4.0,
+                #     solid_capstyle="round",
+                #     solid_joinstyle="round",
+                #     alpha=1.0,
+                #     zorder=1,
+                # )
                 # 绘制彩色道路中线
                 ax.plot(
                     xs_line,
@@ -278,7 +258,6 @@ def visualize_folder(
     color_config: Path,
     dpi: int = 200,
     use_contours: bool = False,
-    min_building_area: float = 0.0,
 ) -> None:
     input_dir = input_dir.resolve()
     output_dir = output_dir.resolve()
@@ -292,7 +271,7 @@ def visualize_folder(
     for path in json_files:
         out_path = output_dir / f"{path.stem}.png"
         try:
-            visualize_tile(path, out_path, color_config, dpi=dpi, use_contours=use_contours, min_building_area=min_building_area)
+            visualize_tile(path, out_path, color_config, dpi=dpi, use_contours=use_contours)
             print(f"Saved {out_path}")
         except ValueError as e:
             print(f"Skip {path}: {e}")
@@ -308,7 +287,6 @@ def main() -> None:
     parser.add_argument("--config", type=str, default="processed/color.json", help="Map building to parent categories and colors")
     parser.add_argument("--dpi", type=int, default=256, help="Output image DPI")
     parser.add_argument("--use_contours", type=bool, default=True, help="Render building contours instead of bbox rectangles")
-    parser.add_argument("--min_building_area", type=float, default=8.0, help="Skip buildings whose area is below this threshold")
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -324,7 +302,6 @@ def main() -> None:
             config_path,
             dpi=args.dpi,
             use_contours=args.use_contours,
-            min_building_area=args.min_building_area,
         )
     else:
         if not args.output_dir:
@@ -334,7 +311,6 @@ def main() -> None:
             Path(args.output_dir),
             dpi=args.dpi,
             use_contours=args.use_contours,
-            min_building_area=args.min_building_area,
             color_config=config_path,
         )
 
